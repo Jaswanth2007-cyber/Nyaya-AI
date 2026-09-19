@@ -1,0 +1,236 @@
+openapi: 3.0.3
+info:
+  title: Nyaya-AI Backend API
+  version: 1.1.0
+  description: >
+    Educational legal-reasoning practice API. All generation endpoints are
+    grounded against a curated, hand-verified knowledge base of general legal
+    doctrines (never case law) before calling the LLM, to prevent fabricated
+    citations. See /README.md for the full anti-hallucination design.
+servers:
+  - url: /api
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    CaseInput:
+      type: object
+      required: [facts, issue, subject, jurisdiction]
+      properties:
+        facts: { type: string }
+        issue: { type: string }
+        subject: { type: string, example: Contract Law }
+        jurisdiction: { type: string, example: India }
+    IracArgument:
+      type: object
+      properties:
+        issue: { type: string }
+        rule: { type: string }
+        application: { type: string }
+        conclusion: { type: string }
+        general_principles: { type: array, items: { type: string } }
+        assumptions: { type: array, items: { type: string } }
+        limitations: { type: array, items: { type: string } }
+        educational_notice: { type: string }
+    Counterargument:
+      type: object
+      properties:
+        opposition_position: { type: string }
+        opposing_arguments: { type: array, items: { type: string } }
+        student_weaknesses: { type: array, items: { type: string } }
+        rebuttal_directions: { type: array, items: { type: string } }
+    ArgumentScore:
+      type: object
+      properties:
+        score: { type: integer, minimum: 1, maximum: 10 }
+        score_label: { type: string }
+        strengths: { type: array, items: { type: string } }
+        improvements: { type: array, items: { type: string } }
+    AuthUser:
+      type: object
+      nullable: true
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string }
+        createdAt: { type: integer }
+    AuthResponse:
+      type: object
+      properties:
+        token: { type: string }
+        user: { $ref: '#/components/schemas/AuthUser' }
+        isGuest: { type: boolean }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200': { description: Backend status, model, and key configuration }
+
+  /generate:
+    post:
+      summary: Generate a structured IRAC practice argument (RAG-grounded)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/CaseInput'
+                - type: object
+                  properties:
+                    stream:
+                      type: boolean
+                      description: If true, responds with text/event-stream (event delta/complete/error) instead of a single JSON body.
+      responses:
+        '200':
+          description: Structured IRAC argument (or an SSE stream if stream=true)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IracArgument' }
+        '400': { description: Missing/oversized field, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /counterargument:
+    post:
+      summary: Generate the opposing counsel's strongest counterargument
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/CaseInput'
+                - type: object
+                  properties:
+                    argument: { $ref: '#/components/schemas/IracArgument' }
+      responses:
+        '200':
+          description: Counterargument
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Counterargument' }
+
+  /explain:
+    post:
+      summary: Rewrite legal reasoning in plain language
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reasoning_text]
+              properties:
+                reasoning_text: { type: string }
+                subject: { type: string }
+                jurisdiction: { type: string }
+      responses:
+        '200': { description: Plain-language explanation }
+
+  /score:
+    post:
+      summary: Score the structure/persuasiveness of a generated argument (1-10)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/CaseInput'
+                - type: object
+                  required: [argument]
+                  properties:
+                    argument: { $ref: '#/components/schemas/IracArgument' }
+      responses:
+        '200':
+          description: Argument score
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ArgumentScore' }
+
+  /auth/signup:
+    post:
+      summary: Create a real account (bcrypt-hashed password, JWT session)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: { type: string }
+                email: { type: string }
+                password: { type: string, minLength: 8 }
+      responses:
+        '201': { description: Account created, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
+        '409': { description: Email already registered }
+
+  /auth/login:
+    post:
+      summary: Sign in to an existing account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        '200': { description: Signed in, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
+        '401': { description: Invalid email or password }
+
+  /auth/guest:
+    post:
+      summary: Start an anonymous guest session (real backend-signed JWT, no account created)
+      responses:
+        '201': { description: Guest session, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
+
+  /auth/me:
+    get:
+      summary: Verify the current session token and return the user (null for guests)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Session info }
+        '401': { description: Missing/invalid/expired token }
+
+  /sessions:
+    get:
+      summary: List the current user's/guest's saved practice sessions
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Session list }
+    post:
+      summary: Save or update a practice session
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201': { description: Saved session }
+    delete:
+      summary: Clear all of the current user's/guest's saved sessions
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Empty session list }
+
+  /sessions/{id}:
+    delete:
+      summary: Delete one saved session
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Remaining session list }

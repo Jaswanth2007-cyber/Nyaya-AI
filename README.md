@@ -20,6 +20,11 @@
 | Session history | Server-persisted per-user history (SQLite) for both registered and guest accounts, with a `localStorage` fallback only if the backend is genuinely unreachable |
 | Resilient demo mode | If the backend or API key is unavailable, the app transparently falls back to realistic mock output rather than breaking |
 | Dark / light mode | Theme toggle on the Auth and Workspace screens (persisted to `localStorage`) |
+| Jurisdiction-specific grounding | Where a real, verifiable statute exists for the matched doctrine and jurisdiction (e.g. Indian Contract Act §20), the model may quote it exactly from the curated knowledge base — it can never add a citation of its own |
+| Observability | Structured JSON request/error logging (Pino) in place of `console.log`, plus live retrieval-cache stats exposed on `/api/health` |
+| API documentation | Full OpenAPI 3.0 spec (`backend/openapi.yaml`), served as interactive Swagger UI at `/api-docs` |
+| Rate limiting | Per-IP limits on the LLM-backed and auth routes (`express-rate-limit`) to blunt abuse/credential-stuffing without affecting normal use |
+| CI | GitHub Actions runs the full backend + frontend test suite and a type-check on every push (`.github/workflows/test.yml`) |
 
 Remaining stretch features from the original spec (multi-round debate simulation, voice input, jurisdiction/subject templates) were intentionally **not** built, to keep the implemented legal subject areas polished rather than spreading thin across "all of law."
 
@@ -64,6 +69,7 @@ The single biggest risk called out in the original spec is the model inventing f
 - Strict JSON-only output matching a fixed schema, enforced further by Groq's JSON response mode.
 - A first-year-law-student register: precise but not needlessly dense.
 - Retrieval-augmented grounding (`backend/src/retrieval.js`) pulls relevant entries from a small curated, hand-verified knowledge base of *general* doctrines before generation, so the model is steered toward real, checkable principles instead of free-associating names — the knowledge base intentionally contains no case law, so retrieval can never introduce a fabricated citation.
+- Where the knowledge base includes a real, verifiable statute reference for the matched jurisdiction (e.g. `Indian Contract Act, 1872 — Section 20`), the system prompt allows the model to quote it *verbatim* — and explicitly forbids it from inventing, altering, or adding any citation beyond exactly what was retrieved. Verified live: asking about a unilateral mistake returns "Section 20" and "Sections 2(d) and 25" — the exact sections in the curated data, not paraphrased or guessed.
 
 ## Authentication & storage
 
@@ -97,16 +103,23 @@ The Vite dev server proxies `/api/*` to `http://localhost:8000` (see `frontend/v
 ## Tests
 
 ```bash
-cd backend  && npm test   # node's built-in test runner — auth, sessions, RAG retrieval, prompt-building, input validation
+cd backend  && npm test   # node's built-in test runner — auth, sessions, RAG retrieval + caching, Swagger docs, prompt-building, input validation
 cd frontend && npm test   # vitest — export/formatting utilities, mock scoring
 ```
+
+CI runs both suites plus a frontend type-check on every push — see `.github/workflows/test.yml`.
+
+## API documentation
+
+Interactive Swagger UI for every backend route (with request/response schemas) is served at `/api-docs` whenever the backend is running (e.g. `http://localhost:8000/api-docs`). The source spec is `backend/openapi.yaml`.
 
 ## Tech stack
 
 - **Frontend:** React 19, TypeScript, Vite, Tailwind CSS v4, lucide-react, jsPDF
-- **Backend:** Node.js, Express, Groq API (`openai/gpt-oss-120b`, free tier), bcryptjs, jsonwebtoken
+- **Backend:** Node.js, Express, Groq API (`openai/gpt-oss-120b`, free tier), bcryptjs, jsonwebtoken, Pino (structured logging), express-rate-limit, swagger-ui-express
 - **Persistence:** SQLite via Node's built-in `node:sqlite` (no extra dependency, no native build step) — `backend/data/nyaya.sqlite`
 - **Testing:** Node's built-in test runner (backend), Vitest (frontend)
+- **CI:** GitHub Actions
 
 ## Environment variables (`backend/.env`)
 
@@ -117,3 +130,4 @@ cd frontend && npm test   # vitest — export/formatting utilities, mock scoring
 | `JWT_SECRET` | No | Signs login session tokens; a random one is generated per process start if unset (fine for dev, but sessions won't survive a restart) |
 | `PORT` | No | Defaults to `8000`; must match the Vite proxy target |
 | `CORS_ORIGIN` | No | Only needed for a production deployment with a separate frontend origin |
+| `LOG_LEVEL` | No | Pino log level (`info` by default); set to `silent` to suppress logs, e.g. in tests |

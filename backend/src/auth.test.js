@@ -9,6 +9,8 @@ import fs from 'node:fs';
 const tmpDataDir = path.join(os.tmpdir(), `nyaya-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 process.env.NYAYA_DATA_DIR = tmpDataDir;
 process.env.JWT_SECRET = 'test-secret-do-not-use-in-production';
+process.env.NODE_ENV = 'test';
+process.env.LOG_LEVEL = 'silent';
 
 const { createApp } = await import('./app.js');
 const { closeDb } = await import('./db.js');
@@ -193,4 +195,18 @@ test('streaming /api/generate still validates required fields before ever contac
   const { status, body } = await post('/api/generate', { stream: true, facts: 'only facts, no issue/subject/jurisdiction' });
   assert.equal(status, 400);
   assert.match(body.error, /Missing required field/);
+});
+
+test('OpenAPI/Swagger docs are actually mounted and serving', async () => {
+  const res = await fetch(`${base}/api-docs/`);
+  assert.equal(res.status, 200);
+  const html = await res.text();
+  assert.match(html, /swagger-ui/i);
+});
+
+test('/api/health reports retrieval cache stats for observability', async () => {
+  const { status, body } = await get('/api/health');
+  assert.equal(status, 200);
+  assert.ok('retrievalCache' in body);
+  assert.ok(typeof body.retrievalCache.size === 'number');
 });

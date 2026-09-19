@@ -1,19 +1,45 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
+import pinoHttp from 'pino-http';
+import rateLimit from 'express-rate-limit';
+import swaggerUi from 'swagger-ui-express';
+import YAML from 'yaml';
+import { logger } from './logger.js';
 import { callGroqJson, streamGroqJson, GroqError } from './groqClient.js';
 import { buildGeneratePrompt, buildCounterargumentPrompt, buildExplainPrompt, buildScorePrompt } from './prompts.js';
 import { requireFields, findOversizedField, MAX_FIELD_LENGTH } from './validators.js';
 import { createUser, verifyCredentials, getUserById, signToken, requireAuth, isValidEmail, isValidPassword } from './auth.js';
 import { listSessions, upsertSession, deleteSession, clearSessions } from './sessions.js';
-import { retrievePrinciples } from './retrieval.js';
+import { retrievePrinciples, getRetrievalCacheStats } from './retrieval.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// LLM-backed routes are the expensive/abuse-prone ones (they cost real Groq
+// quota); auth routes get a tighter limit to blunt credential-stuffing/brute
+// force. Both are generous enough not to bother a real student practicing.
+// Disabled under the test runner: a single test file legitimately issues far
+// more than 10-20 requests in a few seconds, which isn't the abuse pattern
+// this is meant to catch.
+const isTestEnv = process.env.NODE_ENV === 'test';
+const generationLimiter = rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: true, legacyHeaders: false, skip: () => isTestEnv });
+const authLimiter = rateLimit({ windowMs: 60_000, limit: 10, standardHeaders: true, legacyHeaders: false, skip: () => isTestEnv });
 
 export function createApp() {
   const app = express();
 
+  app.use(pinoHttp({ logger }));
+
   const allowedOrigins = (process.env.CORS_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
   app.use(cors(allowedOrigins.length ? { origin: allowedOrigins } : {}));
   app.use(express.json({ limit: '1mb' }));
+
+  // Interactive OpenAPI/Swagger docs for the whole API — see openapi.yaml.
+  const openapiSpec = YAML.parse(fs.readFileSync(path.join(__dirname, '..', 'openapi.yaml'), 'utf-8'));
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openapiSpec));
 
   app.get('/api/health', (_req, res) => {
     res.json({
@@ -22,13 +48,14 @@ export function createApp() {
       message: 'Nyaya-AI backend is running',
       provider: 'groq',
       model: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
-      keyConfigured: Boolean(process.env.GROQ_API_KEY)
+      keyConfigured: Boolean(process.env.GROQ_API_KEY),
+      retrievalCache: getRetrievalCacheStats()
     });
   });
 
   // ---------- LLM-backed generation routes ----------
 
-  app.post('/api/generate', async (req, res, next) => {
+  app.post('/api/generate', generationLimiter, async (req, res, next) => {
     try {
       const missing = requireFields(req.body, ['facts', 'issue', 'subject', 'jurisdiction']);
       if (missing.length) {
@@ -75,7 +102,7 @@ export function createApp() {
     }
   });
 
-  app.post('/api/counterargument', async (req, res, next) => {
+  app.post('/api/counterargument', generationLimiter, async (req, res, next) => {
     try {
       const missing = requireFields(req.body, ['facts', 'issue', 'subject', 'jurisdiction']);
       if (missing.length) {
@@ -93,7 +120,7 @@ export function createApp() {
     }
   });
 
-  app.post('/api/explain', async (req, res, next) => {
+  app.post('/api/explain', generationLimiter, async (req, res, next) => {
     try {
       const missing = requireFields(req.body, ['reasoning_text']);
       if (missing.length) {
@@ -111,7 +138,7 @@ export function createApp() {
     }
   });
 
-  app.post('/api/score', async (req, res, next) => {
+  app.post('/api/score', generationLimiter, async (req, res, next) => {
     try {
       const missing = requireFields(req.body, ['facts', 'issue', 'subject', 'jurisdiction']);
       if (missing.length) {
@@ -130,7 +157,7 @@ export function createApp() {
 
   // ---------- Auth routes ----------
 
-  app.post('/api/auth/signup', async (req, res, next) => {
+  app.post('/api/auth/signup', authLimiter, async (req, res, next) => {
     try {
       const { name, email, password } = req.body || {};
       const missing = requireFields(req.body, ['name', 'email', 'password']);
@@ -152,7 +179,7 @@ export function createApp() {
     }
   });
 
-  app.post('/api/auth/login', async (req, res, next) => {
+  app.post('/api/auth/login', authLimiter, async (req, res, next) => {
     try {
       const { email, password } = req.body || {};
       const missing = requireFields(req.body, ['email', 'password']);
@@ -172,7 +199,7 @@ export function createApp() {
   // Issues a real, backend-verified token so guest history goes through the
   // exact same /api/sessions storage as a registered account (no separate
   // localStorage-only code path to keep in sync).
-  app.post('/api/auth/guest', (_req, res) => {
+  app.post('/api/auth/guest', authLimiter, (_req, res) => {
     const guestId = `guest_${crypto.randomUUID()}`;
     const token = signToken(guestId);
     res.status(201).json({ token, user: null, isGuest: true });
@@ -213,7 +240,7 @@ export function createApp() {
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
     const status = err.status || (err instanceof GroqError ? err.status : 500);
-    console.error('[nyaya-backend]', err.message);
+    logger.error({ err }, 'Request failed');
     res.status(status).json({ error: err.message || 'Internal server error' });
   });
 

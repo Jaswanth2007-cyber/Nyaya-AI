@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,6 +16,42 @@ function tokenize(text) {
     .filter(Boolean);
 }
 
+// Precompute each entry's token set once at module load instead of
+// re-tokenizing the same static doctrine text on every single request.
+const TOKENIZED_KNOWLEDGE_BASE = Object.fromEntries(
+  Object.entries(KNOWLEDGE_BASE).map(([subject, entries]) => [
+    subject,
+    entries.map(entry => ({
+      entry,
+      tokens: [...tokenize(entry.principle), ...tokenize(entry.description), ...entry.keywords.map(k => k.toLowerCase())]
+    }))
+  ])
+);
+
+// Common legal principles are asked about again and again (the same handful
+// of subjects and near-duplicate fact patterns), so cache retrieval results
+// in memory rather than re-scoring the whole knowledge base every time.
+// Small, bounded, FIFO-evicted — this is a request-scoping cache, not a
+// distributed one, which is the right scope for a single-process backend.
+const CACHE_MAX_ENTRIES = 200;
+const retrievalCache = new Map();
+let cacheHits = 0;
+let cacheMisses = 0;
+
+function cacheKey({ subject, issue, facts, topN }) {
+  return crypto.createHash('sha1').update(`${subject}\u0000${issue}\u0000${facts}\u0000${topN}`).digest('hex');
+}
+
+export function getRetrievalCacheStats() {
+  return { size: retrievalCache.size, hits: cacheHits, misses: cacheMisses };
+}
+
+export function clearRetrievalCache() {
+  retrievalCache.clear();
+  cacheHits = 0;
+  cacheMisses = 0;
+}
+
 /**
  * Lightweight retrieval-augmented-generation step: scores every curated
  * doctrine entry for the given subject against the student's issue/facts by
@@ -26,20 +63,40 @@ function tokenize(text) {
  * real reference material instead of inventing anything.
  */
 export function retrievePrinciples({ subject, issue, facts }, topN = 4) {
-  const entries = KNOWLEDGE_BASE[subject];
-  if (!entries || !entries.length) return [];
+  const tokenizedEntries = TOKENIZED_KNOWLEDGE_BASE[subject];
+  if (!tokenizedEntries || !tokenizedEntries.length) return [];
 
+  const key = cacheKey({ subject, issue, facts, topN });
+  const cached = retrievalCache.get(key);
+  if (cached) {
+    cacheHits += 1;
+    return cached;
+  }
+  cacheMisses += 1;
+
+  const result = computeRetrieval(tokenizedEntries, { issue, facts }, topN);
+
+  if (retrievalCache.size >= CACHE_MAX_ENTRIES) {
+    // Evict the oldest entry (Map preserves insertion order) to keep this bounded.
+    retrievalCache.delete(retrievalCache.keys().next().value);
+  }
+  retrievalCache.set(key, result);
+
+  return result;
+}
+
+function computeRetrieval(tokenizedEntries, { issue, facts }, topN) {
   const queryTokens = new Set([...tokenize(issue), ...tokenize(facts)]);
-  if (queryTokens.size === 0) return entries.slice(0, topN);
+  if (queryTokens.size === 0) return tokenizedEntries.slice(0, topN).map(t => t.entry);
 
-  const scored = entries.map(entry => {
-    const entryTokens = [...tokenize(entry.principle), ...tokenize(entry.description), ...entry.keywords.map(k => k.toLowerCase())];
+  const haystack = `${issue || ''} ${facts || ''}`.toLowerCase();
+
+  const scored = tokenizedEntries.map(({ entry, tokens }) => {
     let score = 0;
-    for (const token of entryTokens) {
+    for (const token of tokens) {
       if (queryTokens.has(token)) score += 1;
     }
     // Multi-word keyword phrases (e.g. "meeting of the minds") also count via substring match.
-    const haystack = `${issue || ''} ${facts || ''}`.toLowerCase();
     for (const phrase of entry.keywords) {
       if (phrase.includes(' ') && haystack.includes(phrase.toLowerCase())) score += 2;
     }

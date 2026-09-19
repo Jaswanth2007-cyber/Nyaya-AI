@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { retrievePrinciples } from './retrieval.js';
+import { retrievePrinciples, getRetrievalCacheStats, clearRetrievalCache } from './retrieval.js';
 
 test('retrieval only returns entries from the requested subject', () => {
   const results = retrievePrinciples({
@@ -39,4 +39,26 @@ test('retrieval returns nothing fabricated — every entry is drawn from the sta
 test('retrieval falls back gracefully for a subject with no knowledge base entries', () => {
   const results = retrievePrinciples({ subject: 'Not A Real Subject', issue: 'x', facts: 'y' });
   assert.deepEqual(results, []);
+});
+
+test('identical queries hit the in-memory cache instead of re-scoring the knowledge base', () => {
+  clearRetrievalCache();
+  const query = { subject: 'Contract Law', issue: 'cache-test unique issue string', facts: 'cache-test unique facts string' };
+
+  const first = retrievePrinciples(query);
+  const afterFirst = getRetrievalCacheStats();
+  assert.equal(afterFirst.misses, 1);
+  assert.equal(afterFirst.hits, 0);
+
+  const second = retrievePrinciples(query);
+  const afterSecond = getRetrievalCacheStats();
+  assert.equal(afterSecond.hits, 1);
+  assert.deepEqual(second, first);
+});
+
+test('a different query is a fresh cache miss, not a stale hit', () => {
+  clearRetrievalCache();
+  retrievePrinciples({ subject: 'Contract Law', issue: 'first unique query', facts: '' });
+  retrievePrinciples({ subject: 'Contract Law', issue: 'second, totally different query', facts: '' });
+  assert.equal(getRetrievalCacheStats().misses, 2);
 });
