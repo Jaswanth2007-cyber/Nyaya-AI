@@ -1,0 +1,12 @@
+# Windows' core.autocrlf silently rewrites \n -> \r\n inside these files
+# unless they're explicitly marked binary, which corrupts them (this is
+# exactly what happened to PITCH.pdf). Never let that happen again.
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.sqlite binary
