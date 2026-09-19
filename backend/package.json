@@ -1,0 +1,17 @@
+{
+  "name": "nayaya-ai-backend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Nayaya-AI backend — free-tier Groq LLM proxy for IRAC/counterargument/explainer generation",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "test": "node --test src/*.test.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1"
+  }
+}
