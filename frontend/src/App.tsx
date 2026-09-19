@@ -14,16 +14,17 @@ export function App() {
   const { theme, toggleTheme } = useTheme();
 
   // Resume a real, still-valid backend session on reload (verified against the
-  // server, not just "a token exists"); also resume a client-only demo session.
+  // server, not just "a token exists") — covers both registered accounts and
+  // anonymous guest sessions, since both now go through the same /api/auth/me
+  // check. Only falls back to the client-only demo marker if there's no token
+  // at all (e.g. guest login failed offline when the demo button was clicked).
   useEffect(() => {
-    if (localStorage.getItem(DEMO_MODE_KEY)) {
-      setCurrentView('workspace');
-      return;
-    }
     if (authService.isAuthenticated()) {
-      authService.me().then(user => {
-        if (user) setCurrentView('workspace');
+      authService.me().then(session => {
+        if (session) setCurrentView('workspace');
       });
+    } else if (localStorage.getItem(DEMO_MODE_KEY)) {
+      setCurrentView('workspace');
     }
   }, []);
 

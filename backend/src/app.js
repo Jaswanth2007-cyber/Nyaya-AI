@@ -1,10 +1,12 @@
+import crypto from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
-import { callGroqJson, GroqError } from './groqClient.js';
+import { callGroqJson, streamGroqJson, GroqError } from './groqClient.js';
 import { buildGeneratePrompt, buildCounterargumentPrompt, buildExplainPrompt, buildScorePrompt } from './prompts.js';
 import { requireFields, findOversizedField, MAX_FIELD_LENGTH } from './validators.js';
 import { createUser, verifyCredentials, getUserById, signToken, requireAuth, isValidEmail, isValidPassword } from './auth.js';
 import { listSessions, upsertSession, deleteSession, clearSessions } from './sessions.js';
+import { retrievePrinciples } from './retrieval.js';
 
 export function createApp() {
   const app = express();
@@ -36,7 +38,36 @@ export function createApp() {
       if (oversized) {
         return res.status(400).json({ error: `Field "${oversized}" exceeds the ${MAX_FIELD_LENGTH}-character limit.` });
       }
-      const { system, user } = buildGeneratePrompt(req.body);
+      // Retrieval-augmented grounding: pull the most relevant verified general
+      // doctrines for this subject/fact-pattern from the curated knowledge base
+      // before generating, so the model's "general_principles" lean on real
+      // reference material rather than free-associating doctrine names.
+      const retrievedPrinciples = retrievePrinciples(req.body);
+      const { system, user } = buildGeneratePrompt({ ...req.body, retrievedPrinciples });
+
+      // Optional token-level streaming: the client opts in with { stream: true }
+      // and receives live "event: delta" chunks over SSE as Groq generates,
+      // followed by one "event: complete" carrying the fully-parsed JSON.
+      if (req.body.stream) {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.flushHeaders?.();
+
+        try {
+          const data = await streamGroqJson({ system, user }, delta => {
+            res.write(`event: delta\ndata: ${JSON.stringify({ text: delta })}\n\n`);
+          });
+          res.write(`event: complete\ndata: ${JSON.stringify(data)}\n\n`);
+        } catch (streamErr) {
+          const message = streamErr instanceof GroqError ? streamErr.message : 'Streaming generation failed.';
+          res.write(`event: error\ndata: ${JSON.stringify({ error: message })}\n\n`);
+        } finally {
+          res.end();
+        }
+        return;
+      }
+
       const data = await callGroqJson({ system, user });
       res.json(data);
     } catch (err) {
@@ -137,10 +168,21 @@ export function createApp() {
     }
   });
 
+  // Anonymous, no-signup session — used by the "1-Click Instant Access" path.
+  // Issues a real, backend-verified token so guest history goes through the
+  // exact same /api/sessions storage as a registered account (no separate
+  // localStorage-only code path to keep in sync).
+  app.post('/api/auth/guest', (_req, res) => {
+    const guestId = `guest_${crypto.randomUUID()}`;
+    const token = signToken(guestId);
+    res.status(201).json({ token, user: null, isGuest: true });
+  });
+
   app.get('/api/auth/me', requireAuth, (req, res) => {
     const user = getUserById(req.userId);
-    if (!user) return res.status(404).json({ error: 'User not found.' });
-    res.json({ user });
+    // A valid token whose id has no stored user record is a guest session,
+    // not an error — sessions work identically for guests and real accounts.
+    res.json({ user, isGuest: !user });
   });
 
   // ---------- Server-persisted session history (authenticated) ----------

@@ -11,6 +11,7 @@ process.env.NYAYA_DATA_DIR = tmpDataDir;
 process.env.JWT_SECRET = 'test-secret-do-not-use-in-production';
 
 const { createApp } = await import('./app.js');
+const { closeDb } = await import('./db.js');
 
 const app = createApp();
 const server = app.listen(0);
@@ -19,6 +20,7 @@ const base = `http://127.0.0.1:${port}`;
 
 test.after(() => {
   server.close();
+  closeDb();
   fs.rmSync(tmpDataDir, { recursive: true, force: true });
 });
 
@@ -136,4 +138,59 @@ test('/api/score requires case fields and a prior argument', async () => {
     facts: 'f', issue: 'i', subject: 'Contract Law', jurisdiction: 'India'
   });
   assert.equal(missingArgument.status, 400);
+});
+
+test('guest login issues a real, working session token with no account created', async () => {
+  const usersBefore = (await post('/api/auth/signup', { name: 'probe', email: 'probe-before@law.edu', password: 'password123' })).body;
+  const { status, body } = await post('/api/auth/guest', {});
+  assert.equal(status, 201);
+  assert.ok(body.token);
+  assert.equal(body.user, null);
+  assert.equal(body.isGuest, true);
+  assert.notEqual(body.token, usersBefore.token, 'guest token must be distinct from a real account token');
+});
+
+test('guest session and registered-account session both pass /api/auth/me, distinguished by isGuest', async () => {
+  const guest = (await post('/api/auth/guest', {})).body;
+  const guestMe = await get('/api/auth/me', guest.token);
+  assert.equal(guestMe.status, 200);
+  assert.equal(guestMe.body.user, null);
+  assert.equal(guestMe.body.isGuest, true);
+
+  const real = (await post('/api/auth/signup', { name: 'Real User', email: 'real-vs-guest@law.edu', password: 'password123' })).body;
+  const realMe = await get('/api/auth/me', real.token);
+  assert.equal(realMe.status, 200);
+  assert.equal(realMe.body.user.email, 'real-vs-guest@law.edu');
+  assert.equal(realMe.body.isGuest, false);
+});
+
+test('unified storage: a guest session can save/list/delete sessions through the exact same /api/sessions routes as a real account', async () => {
+  const guest = (await post('/api/auth/guest', {})).body;
+
+  const created = await post('/api/sessions', { title: 'Guest practice session' }, guest.token);
+  assert.equal(created.status, 201);
+
+  const listed = await get('/api/sessions', guest.token);
+  assert.equal(listed.body.sessions.length, 1);
+  assert.equal(listed.body.sessions[0].title, 'Guest practice session');
+
+  const afterDelete = await del(`/api/sessions/${created.body.session.id}`, guest.token);
+  assert.equal(afterDelete.body.sessions.length, 0);
+});
+
+test('session history has no artificial row cap — well past the old 50-entry limit still persists in full', async () => {
+  const user = (await post('/api/auth/signup', { name: 'Heavy User', email: 'heavy-user@law.edu', password: 'password123' })).body;
+
+  for (let i = 0; i < 60; i++) {
+    await post('/api/sessions', { title: `Session ${i}` }, user.token);
+  }
+
+  const { body } = await get('/api/sessions', user.token);
+  assert.equal(body.sessions.length, 60);
+});
+
+test('streaming /api/generate still validates required fields before ever contacting Groq', async () => {
+  const { status, body } = await post('/api/generate', { stream: true, facts: 'only facts, no issue/subject/jurisdiction' });
+  assert.equal(status, 400);
+  assert.match(body.error, /Missing required field/);
 });

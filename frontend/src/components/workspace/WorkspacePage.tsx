@@ -10,7 +10,7 @@ import type {
   Jurisdiction
 } from '../../types/legal';
 import { SAMPLE_CASES } from '../../data/sampleCases';
-import { apiService, authService, sessionsApi, DEMO_MODE_KEY } from '../../services/api';
+import { apiService, authService, sessionsApi } from '../../services/api';
 import { storageService } from '../../services/storage';
 import { NyayaLogo } from '../brand/NyayaLogo';
 import { EditorialIrac } from './EditorialIrac';
@@ -71,9 +71,11 @@ const JURISDICTION_OPTIONS: Jurisdiction[] = [
 ];
 
 export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onLogout, theme, onToggleTheme }) => {
-  // A real (server-verified) account gets server-persisted, unbounded session
-  // history; the client-only demo path keeps using the bounded localStorage cache.
-  const isAuthenticatedUser = authService.isAuthenticated() && !localStorage.getItem(DEMO_MODE_KEY);
+  // Any backend session — registered account or anonymous guest — gets
+  // server-persisted, unbounded session history via the same /api/sessions
+  // storage. Only the rare fully-offline fallback (guest login itself failed)
+  // uses the bounded localStorage cache instead.
+  const isAuthenticatedUser = authService.isAuthenticated();
   // Primary Case Input State
   const [input, setInput] = useState<CaseInput>({
     subject: SAMPLE_CASES[0].subject,
@@ -96,6 +98,9 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onLogout, theme, o
   // Argument Strength Scoring (good-to-have feature)
   const [argumentScore, setArgumentScore] = useState<ArgumentScore | null>(null);
   const [isLoadingScore, setIsLoadingScore] = useState(false);
+
+  // Live token-streaming preview while the IRAC argument is being generated
+  const [streamingPreview, setStreamingPreview] = useState('');
 
   // UI Flow States
   const [activeTab, setActiveTab] = useState<'irac' | 'counterargument' | 'explain'>('irac');
@@ -187,13 +192,17 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onLogout, theme, o
     try {
       setIsLoadingArgument(true);
       setErrorMessage(null);
+      setStreamingPreview('');
 
-      const result = await apiService.generateArgument({
-        facts: input.facts,
-        issue: input.issue,
-        subject: input.subject,
-        jurisdiction: input.jurisdiction
-      });
+      const result = await apiService.generateArgumentStream(
+        {
+          facts: input.facts,
+          issue: input.issue,
+          subject: input.subject,
+          jurisdiction: input.jurisdiction
+        },
+        delta => setStreamingPreview(prev => prev + delta)
+      );
 
       setArgument(result.data);
       setIsArgumentMock(result.isMock);
@@ -216,6 +225,7 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onLogout, theme, o
       showToast('Failed to generate argument', 'error');
     } finally {
       setIsLoadingArgument(false);
+      setStreamingPreview('');
     }
   };
 
@@ -837,7 +847,20 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onLogout, theme, o
             {activeTab === 'irac' && (
               <>
                 {isLoadingArgument ? (
-                  <LoadingSkeleton title="Structuring IRAC Practice Brief..." step="irac" />
+                  streamingPreview ? (
+                    <div className="max-w-4xl mx-auto space-y-3 animate-editorial-fade">
+                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[var(--gold)]">
+                        <Sparkles className="w-3.5 h-3.5 animate-spin" />
+                        <span>Streaming live from the model...</span>
+                      </div>
+                      <div className="rounded-2xl border border-[var(--hairline)] bg-[var(--bg-raised)] p-6 text-sm text-[var(--muted)] font-mono leading-relaxed whitespace-pre-wrap max-h-[420px] overflow-y-auto">
+                        {streamingPreview}
+                        <span className="inline-block w-2 h-4 ml-0.5 bg-[var(--gold)] animate-pulse align-text-bottom" />
+                      </div>
+                    </div>
+                  ) : (
+                    <LoadingSkeleton title="Structuring IRAC Practice Brief..." step="irac" />
+                  )
                 ) : argument ? (
                   <EditorialIrac
                     argument={argument}

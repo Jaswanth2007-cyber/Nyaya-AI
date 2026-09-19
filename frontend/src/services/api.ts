@@ -7,7 +7,7 @@ import type {
   LegalExplanation,
   ApiHealthResponse,
   AuthResponse,
-  AuthUser,
+  SessionInfo,
   ArgumentScore,
   CaseSession
 } from '../types/legal';
@@ -143,6 +143,96 @@ export const apiService = {
       return { data: normalized, isMock: false };
     } catch (err) {
       console.warn('Backend /api/generate call failed or offline, using educational fallback:', err);
+      await new Promise(resolve => setTimeout(resolve, 600));
+      return { data: getMockIracArgument(req), isMock: true };
+    }
+  },
+
+  /**
+   * Same as generateArgument, but requests token-level SSE streaming from the
+   * backend (POST /api/generate with { stream: true }) and invokes onDelta as
+   * text arrives, so the UI can render a live "typewriter" preview instead of
+   * a blank loading state. Falls back to the mock generator exactly like the
+   * non-streaming path if the backend or network is unavailable.
+   */
+  async generateArgumentStream(
+    req: GenerateRequest,
+    onDelta: (text: string) => void,
+    options?: RequestOptions
+  ): Promise<{ data: IracArgument; isMock: boolean }> {
+    if (options?.forceMock) {
+      await new Promise(resolve => setTimeout(resolve, 800));
+      return { data: getMockIracArgument(req), isMock: true };
+    }
+
+    try {
+      const url = `${API_BASE_URL}/api/generate`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), options?.timeoutMs || 30000);
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream'
+        },
+        body: JSON.stringify({ ...req, stream: true }),
+        signal: controller.signal
+      });
+
+      if (!res.ok || !res.body) {
+        throw new Error(`Server returned HTTP ${res.status}: ${res.statusText}`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let result: Record<string, unknown> | null = null;
+      let streamError: string | null = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split('\n\n');
+        buffer = events.pop() ?? '';
+
+        for (const rawEvent of events) {
+          const eventLine = rawEvent.split('\n').find(l => l.startsWith('event:'));
+          const dataLine = rawEvent.split('\n').find(l => l.startsWith('data:'));
+          if (!eventLine || !dataLine) continue;
+
+          const eventName = eventLine.slice(6).trim();
+          const data = JSON.parse(dataLine.slice(5).trim());
+
+          if (eventName === 'delta') onDelta(data.text);
+          else if (eventName === 'complete') result = data;
+          else if (eventName === 'error') streamError = data.error;
+        }
+      }
+
+      clearTimeout(timeoutId);
+
+      if (streamError || !result) {
+        throw new Error(streamError || 'Streamed response ended without a result.');
+      }
+
+      const json = result;
+      const normalized: IracArgument = {
+        issue: (json.issue as string) || (json.Issue as string) || req.issue,
+        rule: (json.rule as string) || (json.Rule as string) || '',
+        application: (json.application as string) || (json.Application as string) || '',
+        conclusion: (json.conclusion as string) || (json.Conclusion as string) || '',
+        general_principles: (json.general_principles as string[]) || (json.generalPrinciples as string[]) || [],
+        assumptions: (json.assumptions as string[]) || [],
+        limitations: (json.limitations as string[]) || [],
+        educational_notice: (json.educational_notice as string) || 'Educational practice brief only. Not formal legal advice.'
+      };
+
+      return { data: normalized, isMock: false };
+    } catch (err) {
+      console.warn('Backend streamed /api/generate call failed or offline, using educational fallback:', err);
       await new Promise(resolve => setTimeout(resolve, 600));
       return { data: getMockIracArgument(req), isMock: true };
     }
@@ -293,7 +383,7 @@ export const authService = {
     return json;
   },
 
-  async me(): Promise<AuthUser | null> {
+  async me(): Promise<SessionInfo | null> {
     const token = getAuthToken();
     if (!token) return null;
     try {
@@ -305,10 +395,23 @@ export const authService = {
         return null;
       }
       const json = await res.json();
-      return json.user;
+      return { user: json.user, isGuest: Boolean(json.isGuest) };
     } catch {
       return null;
     }
+  },
+
+  /**
+   * "1-Click Instant Access" — a real, backend-verified anonymous session
+   * (not a fake localStorage-only bypass). Session history for a guest flows
+   * through the exact same /api/sessions storage as a registered account.
+   */
+  async guestLogin(): Promise<AuthResponse> {
+    const res = await fetch(`${API_BASE_URL}/api/auth/guest`, { method: 'POST' });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new ApiRequestError(json.error || 'Could not start a guest session', res.status);
+    setAuthToken(json.token);
+    return json;
   },
 
   logout(): void {

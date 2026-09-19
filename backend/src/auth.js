@@ -1,9 +1,8 @@
 import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { readCollection, writeCollection } from './db.js';
+import { db } from './db.js';
 
-const USERS_COLLECTION = 'users';
 const SALT_ROUNDS = 10;
 const TOKEN_TTL = '7d';
 
@@ -26,10 +25,10 @@ function toPublicUser(user) {
 }
 
 export async function createUser({ name, email, password }) {
-  const users = readCollection(USERS_COLLECTION);
   const normalizedEmail = email.trim().toLowerCase();
 
-  if (users.some(u => u.email === normalizedEmail)) {
+  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
+  if (existing) {
     const err = new Error('An account with this email already exists.');
     err.status = 409;
     throw err;
@@ -44,15 +43,15 @@ export async function createUser({ name, email, password }) {
     createdAt: Date.now()
   };
 
-  users.push(user);
-  writeCollection(USERS_COLLECTION, users);
+  db.prepare('INSERT INTO users (id, name, email, passwordHash, createdAt) VALUES (?, ?, ?, ?, ?)')
+    .run(user.id, user.name, user.email, user.passwordHash, user.createdAt);
+
   return toPublicUser(user);
 }
 
 export async function verifyCredentials({ email, password }) {
-  const users = readCollection(USERS_COLLECTION);
   const normalizedEmail = email.trim().toLowerCase();
-  const user = users.find(u => u.email === normalizedEmail);
+  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(normalizedEmail);
 
   // Always run bcrypt.compare (even against a dummy hash) so login timing
   // doesn't leak whether the email exists.
@@ -69,8 +68,7 @@ export async function verifyCredentials({ email, password }) {
 }
 
 export function getUserById(id) {
-  const users = readCollection(USERS_COLLECTION);
-  const user = users.find(u => u.id === id);
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
   return user ? toPublicUser(user) : null;
 }
 

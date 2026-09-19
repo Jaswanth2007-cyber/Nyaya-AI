@@ -49,16 +49,22 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     }
   };
 
-  const handleDemoAccess = () => {
+  const handleDemoAccess = async () => {
     setIsSubmitting(true);
-    // A real backend account is not required to explore the tool: this marks a
-    // client-only demo session so the workspace falls back to localStorage
-    // history instead of calling the authenticated /api/sessions routes.
-    localStorage.setItem(DEMO_MODE_KEY, '1');
-    setTimeout(() => {
+    try {
+      // Real, backend-verified anonymous session — no signup required, but
+      // history still flows through the same /api/sessions storage as a
+      // registered account instead of a separate localStorage-only path.
+      await authService.guestLogin();
+      localStorage.removeItem(DEMO_MODE_KEY);
+    } catch {
+      // Backend unreachable: fall back to a client-only demo session so the
+      // "instant access" promise still holds even fully offline.
+      localStorage.setItem(DEMO_MODE_KEY, '1');
+    } finally {
       setIsSubmitting(false);
       onSuccess();
-    }, 300);
+    }
   };
 
   return (

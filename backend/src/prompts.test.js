@@ -21,6 +21,18 @@ test('buildGeneratePrompt forbids fabricated citations and requests the IRAC JSO
   assert.match(user, new RegExp(sampleInput.issue));
 });
 
+test('buildGeneratePrompt injects retrieved-principle grounding when provided, and omits it when empty', () => {
+  const withPrinciples = buildGeneratePrompt({
+    ...sampleInput,
+    retrievedPrinciples: [{ principle: 'Invitation to Treat', description: 'Displays are invitations, not offers.' }]
+  });
+  assert.match(withPrinciples.user, /Verified reference doctrines/);
+  assert.match(withPrinciples.user, /Invitation to Treat/);
+
+  const withoutPrinciples = buildGeneratePrompt(sampleInput);
+  assert.doesNotMatch(withoutPrinciples.user, /Verified reference doctrines/);
+});
+
 test('buildCounterargumentPrompt includes the prior argument when provided', () => {
   const argument = { issue: 'x', rule: 'y', application: 'z', conclusion: 'w' };
   const { user } = buildCounterargumentPrompt({ ...sampleInput, argument });

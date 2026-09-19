@@ -6,16 +6,22 @@ Hard rules (never break these):
 3. Write for a first-year law student: precise, but not needlessly dense.
 4. Always respond with a single valid JSON object matching the exact schema given in the user message — no markdown fences, no commentary outside the JSON.`;
 
-export function buildGeneratePrompt({ facts, issue, subject, jurisdiction }) {
+export function buildGeneratePrompt({ facts, issue, subject, jurisdiction, retrievedPrinciples = [] }) {
   const system = `${BASE_RULES}
 
 Task: produce a structured IRAC (Issue, Rule, Application, Conclusion) practice argument for the student's hypothetical.`;
+
+  const groundingBlock = retrievedPrinciples.length
+    ? `\nVerified reference doctrines retrieved for this subject (from a curated knowledge base — general principles only, never case law). Prefer these exact names in "general_principles" when they are actually relevant to the facts; ignore any that aren't:\n${retrievedPrinciples
+        .map(p => `- ${p.principle}: ${p.description}`)
+        .join('\n')}\n`
+    : '';
 
   const user = `Subject: ${subject}
 Jurisdiction: ${jurisdiction}
 Legal issue: ${issue}
 Facts: ${facts}
-
+${groundingBlock}
 Return JSON exactly in this shape:
 {
   "issue": "restated, precise legal question",

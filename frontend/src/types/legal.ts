@@ -98,7 +98,13 @@ export interface AuthUser {
 
 export interface AuthResponse {
   token: string;
-  user: AuthUser;
+  user: AuthUser | null;
+  isGuest?: boolean;
+}
+
+export interface SessionInfo {
+  user: AuthUser | null;
+  isGuest: boolean;
 }
 
 export interface ArgumentScore {

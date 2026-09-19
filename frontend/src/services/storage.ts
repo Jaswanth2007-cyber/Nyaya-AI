@@ -29,20 +29,34 @@ export const storageService = {
     }
   },
 
+  // This localStorage path is only the last-resort offline fallback for when
+  // a real backend session (registered account or guest) can't be reached —
+  // normal history is stored server-side with no artificial limit (see
+  // sessionsApi / backend/src/sessions.js). No fixed row cap here either;
+  // instead, if the browser's actual storage quota is hit, the oldest
+  // sessions are dropped just enough to fit rather than failing outright.
   saveSession(session: CaseSession): void {
-    try {
-      const sessions = this.getSessions();
-      const existingIndex = sessions.findIndex(s => s.id === session.id);
-      if (existingIndex >= 0) {
-        sessions[existingIndex] = session;
-      } else {
-        sessions.unshift(session);
+    const sessions = this.getSessions();
+    const existingIndex = sessions.findIndex(s => s.id === session.id);
+    if (existingIndex >= 0) {
+      sessions[existingIndex] = session;
+    } else {
+      sessions.unshift(session);
+    }
+
+    let toSave = sessions;
+    while (toSave.length > 0) {
+      try {
+        localStorage.setItem(STORAGE_KEY_SESSIONS, JSON.stringify(toSave));
+        return;
+      } catch (err) {
+        if (toSave.length === 1) {
+          console.error('Failed to save session to localStorage (quota exceeded even for a single entry):', err);
+          return;
+        }
+        // Quota exceeded — drop the oldest entry and retry rather than losing the new save.
+        toSave = toSave.slice(0, -1);
       }
-      // Limit to 50 most recent sessions to avoid localStorage quota exhaustion
-      const trimmed = sessions.slice(0, 50);
-      localStorage.setItem(STORAGE_KEY_SESSIONS, JSON.stringify(trimmed));
-    } catch (err) {
-      console.error('Failed to save session to localStorage:', err);
     }
   },
 

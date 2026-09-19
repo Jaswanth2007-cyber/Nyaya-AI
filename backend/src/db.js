@@ -1,3 +1,4 @@
+import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,30 +8,38 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Configurable so tests can point at an isolated temp directory instead of
 // polluting real data on disk.
 const DATA_DIR = process.env.NYAYA_DATA_DIR || path.join(__dirname, '..', 'data');
-
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-function filePath(name) {
-  return path.join(DATA_DIR, `${name}.json`);
-}
+const DB_PATH = path.join(DATA_DIR, 'nyaya.sqlite');
 
-export function readCollection(name) {
-  ensureDataDir();
-  const file = filePath(name);
-  if (!fs.existsSync(file)) return [];
-  try {
-    const raw = fs.readFileSync(file, 'utf-8');
-    return raw.trim() ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
+// A real embedded database (SQLite, via Node's built-in node:sqlite — no
+// external dependency, no native build step) instead of hand-rolled flat
+// JSON files: proper indexes, per-user composite-key isolation enforced by
+// the schema itself, and no artificial row-count cap.
+export const db = new DatabaseSync(DB_PATH);
 
-export function writeCollection(name, records) {
-  ensureDataDir();
-  fs.writeFileSync(filePath(name), JSON.stringify(records, null, 2), 'utf-8');
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    passwordHash TEXT NOT NULL,
+    createdAt INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT NOT NULL,
+    userId TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    data TEXT NOT NULL,
+    PRIMARY KEY (id, userId)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_sessions_userId_timestamp ON sessions (userId, timestamp DESC);
+`);
+
+export function closeDb() {
+  db.close();
 }
