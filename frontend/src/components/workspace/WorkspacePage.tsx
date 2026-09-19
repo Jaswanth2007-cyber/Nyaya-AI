@@ -10,9 +10,9 @@ import type {
   Jurisdiction
 } from '../../types/legal';
 import { SAMPLE_CASES } from '../../data/sampleCases';
-import { apiService } from '../../services/api';
+import { apiService, authService, sessionsApi, DEMO_MODE_KEY } from '../../services/api';
 import { storageService } from '../../services/storage';
-import { NayayaLogo } from '../brand/NayayaLogo';
+import { NyayaLogo } from '../brand/NyayaLogo';
 import { EditorialIrac } from './EditorialIrac';
 import { EditorialCounter } from './EditorialCounter';
 import { EditorialExplainer } from './EditorialExplainer';
@@ -45,9 +45,10 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import type { Theme } from '../../hooks/useTheme';
+import type { ArgumentScore } from '../../types/legal';
 
 interface WorkspacePageProps {
-  onBackToLanding: () => void;
+  onLogout: () => void;
   theme: Theme;
   onToggleTheme: () => void;
 }
@@ -69,7 +70,10 @@ const JURISDICTION_OPTIONS: Jurisdiction[] = [
   'General / Educational'
 ];
 
-export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onBackToLanding, theme, onToggleTheme }) => {
+export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onLogout, theme, onToggleTheme }) => {
+  // A real (server-verified) account gets server-persisted, unbounded session
+  // history; the client-only demo path keeps using the bounded localStorage cache.
+  const isAuthenticatedUser = authService.isAuthenticated() && !localStorage.getItem(DEMO_MODE_KEY);
   // Primary Case Input State
   const [input, setInput] = useState<CaseInput>({
     subject: SAMPLE_CASES[0].subject,
@@ -87,6 +91,11 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onBackToLanding, t
   const [isArgumentMock, setIsArgumentMock] = useState(false);
   const [isCounterMock, setIsCounterMock] = useState(false);
   const [isExplainMock, setIsExplainMock] = useState(false);
+  const [isScoreMock, setIsScoreMock] = useState(false);
+
+  // Argument Strength Scoring (good-to-have feature)
+  const [argumentScore, setArgumentScore] = useState<ArgumentScore | null>(null);
+  const [isLoadingScore, setIsLoadingScore] = useState(false);
 
   // UI Flow States
   const [activeTab, setActiveTab] = useState<'irac' | 'counterargument' | 'explain'>('irac');
@@ -130,8 +139,14 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onBackToLanding, t
       setIsBackendHealthy(res.isHealthy);
     });
 
-    const saved = storageService.getSessions();
-    setSessions(saved);
+    if (isAuthenticatedUser) {
+      sessionsApi.list().then(setSessions).catch(() => {
+        // Server unreachable — fall back to whatever local cache exists rather than showing nothing.
+        setSessions(storageService.getSessions());
+      });
+    } else {
+      setSessions(storageService.getSessions());
+    }
 
     const interval = setInterval(() => {
       apiService.checkHealth().then(res => {
@@ -156,6 +171,7 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onBackToLanding, t
     setExplanation(null);
     setErrorMessage(null);
     setCurrentSessionId(null);
+    setArgumentScore(null);
     setActiveTab('irac');
     setShowPresetsMenu(false);
     showToast(`Loaded "${preset.title}" (${preset.subject})`, 'info');
@@ -181,6 +197,7 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onBackToLanding, t
 
       setArgument(result.data);
       setIsArgumentMock(result.isMock);
+      setArgumentScore(null);
       setActiveTab('irac');
 
       if (workspaceRef.current) {
@@ -283,6 +300,32 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onBackToLanding, t
     }
   };
 
+  // Score Argument Strength (good-to-have feature)
+  const handleScoreArgument = async () => {
+    if (!argument) return;
+    try {
+      setIsLoadingScore(true);
+      const result = await apiService.scoreArgument({
+        facts: input.facts,
+        issue: input.issue,
+        subject: input.subject,
+        jurisdiction: input.jurisdiction,
+        argument
+      });
+      setArgumentScore(result.data);
+      setIsScoreMock(result.isMock);
+      showToast(
+        result.isMock ? 'Scored argument strength (Demo Mode)' : 'Scored argument strength!',
+        'success'
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'An unexpected error occurred';
+      showToast(`Failed to score argument: ${msg}`, 'error');
+    } finally {
+      setIsLoadingScore(false);
+    }
+  };
+
   // Copy brief
   const handleCopyBrief = async () => {
     const isMock = isArgumentMock || isCounterMock || isExplainMock;
@@ -302,7 +345,7 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onBackToLanding, t
     const isMock = isArgumentMock || isCounterMock || isExplainMock;
     const brief = generateMarkdownBrief(input, argument, counterargument, explanation, isMock);
     const safeTitle = input.subject.replace(/[^a-zA-Z0-9]/g, '_');
-    downloadAsTxt(`Nayaya_AI_Brief_${safeTitle}.txt`, brief);
+    downloadAsTxt(`Nyaya_AI_Brief_${safeTitle}.txt`, brief);
     showToast('Downloaded TXT brief', 'success');
   };
 
@@ -312,7 +355,7 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onBackToLanding, t
       setExportingPdf(true);
       const isMock = isArgumentMock || isCounterMock || isExplainMock;
       const safeTitle = input.subject.replace(/[^a-zA-Z0-9]/g, '_');
-      exportAsPdf(input, argument, counterargument, explanation, isMock, `Nayaya_AI_${safeTitle}.pdf`);
+      exportAsPdf(input, argument, counterargument, explanation, isMock, `Nyaya_AI_${safeTitle}.pdf`);
       showToast('Exported styled PDF brief', 'success');
     } catch {
       showToast('Failed to generate PDF', 'error');
@@ -321,8 +364,8 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onBackToLanding, t
     }
   };
 
-  // Save Session into LocalStorage
-  const handleSaveSession = () => {
+  // Save Session (server-persisted for real accounts, localStorage for the demo path)
+  const handleSaveSession = async () => {
     const sessionId = currentSessionId || `session_${Date.now()}`;
     const newSession: CaseSession = {
       id: sessionId,
@@ -335,10 +378,21 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onBackToLanding, t
       status: argument && counterargument && explanation ? 'complete' : 'argued'
     };
 
-    storageService.saveSession(newSession);
-    setCurrentSessionId(sessionId);
-    setSessions(storageService.getSessions());
-    showToast('Session saved to local history', 'success');
+    if (isAuthenticatedUser) {
+      try {
+        await sessionsApi.save(newSession);
+        setSessions(await sessionsApi.list());
+        setCurrentSessionId(sessionId);
+        showToast('Session saved to your account', 'success');
+      } catch {
+        showToast('Failed to save session to the server', 'error');
+      }
+    } else {
+      storageService.saveSession(newSession);
+      setCurrentSessionId(sessionId);
+      setSessions(storageService.getSessions());
+      showToast('Session saved to local history (demo mode)', 'success');
+    }
   };
 
   // Restore Session
@@ -349,14 +403,23 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onBackToLanding, t
     setExplanation(session.explanation);
     setCurrentSessionId(session.id);
     setErrorMessage(null);
+    setArgumentScore(null);
     setActiveTab('irac');
     showToast(`Loaded session from ${new Date(session.timestamp).toLocaleDateString()}`, 'info');
   };
 
   // Delete Session
-  const handleDeleteSession = (id: string) => {
-    const updated = storageService.deleteSession(id);
-    setSessions(updated);
+  const handleDeleteSession = async (id: string) => {
+    if (isAuthenticatedUser) {
+      try {
+        setSessions(await sessionsApi.remove(id));
+      } catch {
+        showToast('Failed to delete session on the server', 'error');
+        return;
+      }
+    } else {
+      setSessions(storageService.deleteSession(id));
+    }
     if (currentSessionId === id) {
       setCurrentSessionId(null);
     }
@@ -364,8 +427,17 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onBackToLanding, t
   };
 
   // Clear All Sessions
-  const handleClearAllSessions = () => {
-    storageService.clearAllSessions();
+  const handleClearAllSessions = async () => {
+    if (isAuthenticatedUser) {
+      try {
+        await sessionsApi.clearAll();
+      } catch {
+        showToast('Failed to clear sessions on the server', 'error');
+        return;
+      }
+    } else {
+      storageService.clearAllSessions();
+    }
     setSessions([]);
     setCurrentSessionId(null);
     showToast('All saved history cleared', 'info');
@@ -384,6 +456,7 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onBackToLanding, t
     setExplanation(null);
     setCurrentSessionId(null);
     setErrorMessage(null);
+    setArgumentScore(null);
     setActiveTab('irac');
     showToast('Ready for new moot-court case', 'info');
   };
@@ -441,7 +514,7 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onBackToLanding, t
         <div className="max-w-[1600px] mx-auto px-6 sm:px-10 lg:px-[3vw] h-18 flex items-center justify-between gap-4">
           {/* Brand Mark */}
           <div className="flex items-center gap-6">
-            <NayayaLogo size="md" />
+            <NyayaLogo size="md" />
             <div className="hidden lg:flex items-center gap-2 pl-6 border-l border-[var(--hairline)] text-xs text-[var(--muted)] font-light">
               <span>Moot Court Environment</span>
             </div>
@@ -537,10 +610,10 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onBackToLanding, t
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
 
-            {/* Exit to Landing */}
+            {/* Log out (real accounts) / exit demo session */}
             <button
-              onClick={onBackToLanding}
-              title="Return to Landing Page"
+              onClick={onLogout}
+              title={isAuthenticatedUser ? 'Log out' : 'Exit demo session'}
               className="p-2 rounded-lg text-[var(--muted-2)] hover:text-[var(--muted)] hover:bg-[var(--surface)] transition-colors"
             >
               <LogOut className="w-4 h-4" />
@@ -774,6 +847,10 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onBackToLanding, t
                     hasCounterargument={Boolean(counterargument)}
                     onTriggerExplain={() => handleExplainReasoning()}
                     hasExplanation={Boolean(explanation)}
+                    score={argumentScore}
+                    isScoreMock={isScoreMock}
+                    isLoadingScore={isLoadingScore}
+                    onScoreArgument={handleScoreArgument}
                   />
                 ) : (
                   <div className="text-center py-20 px-4 space-y-4 max-w-md mx-auto">
@@ -837,6 +914,7 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onBackToLanding, t
         onDeleteSession={handleDeleteSession}
         onClearAll={handleClearAllSessions}
         onShowToast={showToast}
+        isCloudSynced={isAuthenticatedUser}
       />
 
       {/* Floating Toasts */}
@@ -846,7 +924,7 @@ export const WorkspacePage: React.FC<WorkspacePageProps> = ({ onBackToLanding, t
       <footer className="relative z-20 w-full border-t border-[var(--hairline)] px-6 sm:px-10 lg:px-[3vw] py-8 mt-16 text-[var(--muted)] text-xs bg-[var(--bg)]">
         <div className="max-w-[1600px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
           <div className="flex items-center gap-2">
-            <NayayaLogo size="sm" showText={true} />
+            <NyayaLogo size="sm" showText={true} />
             <span className="text-[var(--muted-2)]">|</span>
             <span className="text-[var(--muted)] text-[11px]">AI-Powered Legal Learning & Moot Court Assistant</span>
           </div>

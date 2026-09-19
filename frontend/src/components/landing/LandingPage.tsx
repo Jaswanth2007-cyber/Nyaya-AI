@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { NayayaLogo } from '../brand/NayayaLogo';
+import { NyayaLogo } from '../brand/NyayaLogo';
 import { ArrowRight, ChevronDown, Menu, X } from 'lucide-react';
 
 interface LandingPageProps {
@@ -53,7 +53,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         <header className="relative z-30 w-full">
           <div className="max-w-[1600px] mx-auto px-6 sm:px-10 lg:px-[4.6vw] h-24 flex items-center justify-between">
             <a href="#top" aria-label="Home" className="animate-rise" style={{ animationDelay: '0ms' }}>
-              <NayayaLogo size="md" fixed />
+              <NyayaLogo size="md" fixed />
             </a>
 
             <nav
@@ -262,7 +262,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       <footer className="relative z-20 w-full border-t border-white/[0.06] px-6 sm:px-10 lg:px-[4.6vw] py-8 bg-[#07070a] text-[#6f6a60] text-xs">
         <div className="max-w-[1600px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
           <div className="flex items-center gap-2">
-            <NayayaLogo size="sm" showText={true} fixed />
+            <NyayaLogo size="sm" showText={true} fixed />
             <span className="text-[#3a3730]">|</span>
             <span className="text-[#a29c8f] text-[11px]">AI-Powered Legal Learning &amp; Moot Court Assistant</span>
           </div>

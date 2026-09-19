@@ -1,4 +1,4 @@
-# Nayaya-AI
+# Nyaya-AI
 
 **AI Court / Legal Brief Simplification and Argument Drafting Assistant** — an educational web app that helps law students practice moot court and legal writing: paste in case facts, get a structured IRAC practice argument, stress-test it against an AI-generated opposition, and translate dense legal reasoning into plain language.
 

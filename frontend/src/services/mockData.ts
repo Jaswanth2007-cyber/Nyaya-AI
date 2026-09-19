@@ -4,7 +4,8 @@ import type {
   LegalExplanation,
   GenerateRequest,
   CounterargumentRequest,
-  ExplainRequest
+  ExplainRequest,
+  ArgumentScore
 } from '../types/legal';
 
 export function getMockIracArgument(req: GenerateRequest): IracArgument {
@@ -185,6 +186,28 @@ export function getMockCounterargument(req: CounterargumentRequest): Counterargu
     rebuttal_directions: [
       'Focus on the direct nexus between the critical viewpoint and the punitive restriction.',
       'Highlight less restrictive alternative measures that were available but ignored.'
+    ]
+  };
+}
+
+export function getMockArgumentScore(argument: IracArgument | null | undefined): ArgumentScore {
+  const filledSections = argument
+    ? [argument.issue, argument.rule, argument.application, argument.conclusion].filter(s => s && s.trim().length > 40).length
+    : 0;
+  const score = Math.min(9, 6 + filledSections);
+
+  return {
+    score,
+    score_label: score >= 8 ? 'Well-structured and persuasive' : 'Solid foundation, needs sharper application',
+    strengths: [
+      'Clear IRAC structure with each section addressed in order.',
+      'General legal principles are named rather than left implicit.',
+      'Conclusion is appropriately hedged for an educational exercise rather than overstated.'
+    ],
+    improvements: [
+      'Tighten the Application section to explicitly tie each fact back to an element of the rule.',
+      'Consider addressing the strongest counter-reading of the facts before concluding.',
+      'Where multiple principles are listed, rank them by how much weight each carries in this fact pattern.'
     ]
   };
 }

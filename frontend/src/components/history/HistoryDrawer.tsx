@@ -20,6 +20,7 @@ interface HistoryDrawerProps {
   onDeleteSession: (id: string) => void;
   onClearAll: () => void;
   onShowToast: (text: string, type: 'success' | 'error' | 'info') => void;
+  isCloudSynced?: boolean;
 }
 
 export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
@@ -29,7 +30,8 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
   onSelectSession,
   onDeleteSession,
   onClearAll,
-  onShowToast
+  onShowToast,
+  isCloudSynced = false
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -49,7 +51,7 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
     e.stopPropagation();
     try {
       const safeTitle = session.input.subject.replace(/[^a-zA-Z0-9]/g, '_');
-      exportAsPdf(session.input, session.argument, session.counterargument, session.explanation, false, `Nayaya_AI_History_${safeTitle}.pdf`);
+      exportAsPdf(session.input, session.argument, session.counterargument, session.explanation, false, `Nyaya_AI_History_${safeTitle}.pdf`);
       onShowToast('Session exported as PDF', 'success');
     } catch {
       onShowToast('Failed to export session PDF', 'error');
@@ -77,7 +79,8 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
                   Practice Session History
                 </h3>
                 <span className="text-xs text-[var(--muted)]">
-                  {sessions.length} {sessions.length === 1 ? 'case saved' : 'cases saved in localStorage'}
+                  {sessions.length} {sessions.length === 1 ? 'case saved' : 'cases saved'}
+                  {' '}{isCloudSynced ? 'to your account' : 'in this browser (demo mode)'}
                 </span>
               </div>
             </div>

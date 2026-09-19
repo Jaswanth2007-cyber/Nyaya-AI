@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { NayayaLogo } from '../brand/NayayaLogo';
-import { ArrowLeft, ArrowRight, Sparkles, CheckCircle2, ShieldAlert, Sun, Moon } from 'lucide-react';
+import { NyayaLogo } from '../brand/NyayaLogo';
+import { ArrowLeft, ArrowRight, Sparkles, CheckCircle2, ShieldAlert, Sun, Moon, AlertCircle } from 'lucide-react';
 import type { Theme } from '../../hooks/useTheme';
+import { authService, ApiRequestError, DEMO_MODE_KEY } from '../../services/api';
 
 interface AuthPageProps {
   onSuccess: () => void;
@@ -10,6 +11,7 @@ interface AuthPageProps {
   theme: Theme;
   onToggleTheme: () => void;
 }
+
 
 export const AuthPage: React.FC<AuthPageProps> = ({
   onSuccess,
@@ -23,18 +25,36 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      if (isSignUp) {
+        await authService.signup(name, email, password);
+      } else {
+        await authService.login(email, password);
+      }
+      localStorage.removeItem(DEMO_MODE_KEY);
       onSuccess();
-    }, 450);
+    } catch (err) {
+      const message = err instanceof ApiRequestError
+        ? err.message
+        : 'Could not reach the server — check that the backend is running.';
+      setError(message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleDemoAccess = () => {
     setIsSubmitting(true);
+    // A real backend account is not required to explore the tool: this marks a
+    // client-only demo session so the workspace falls back to localStorage
+    // history instead of calling the authenticated /api/sessions routes.
+    localStorage.setItem(DEMO_MODE_KEY, '1');
     setTimeout(() => {
       setIsSubmitting(false);
       onSuccess();
@@ -71,7 +91,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
             >
               {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
             </button>
-            <NayayaLogo size="sm" showText={false} />
+            <NyayaLogo size="sm" showText={false} />
           </div>
         </div>
 
@@ -151,6 +171,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
+            {error && (
+              <div className="flex items-start gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3.5 py-2.5 text-xs text-rose-300">
+                <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
             {isSignUp && (
               <div>
                 <label className="block text-[11px] font-medium uppercase tracking-wider text-[var(--muted)] mb-1.5">
@@ -158,6 +185,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 </label>
                 <input
                   type="text"
+                  required
                   value={name}
                   onChange={e => setName(e.target.value)}
                   placeholder="e.g. Adv. Sharma / Harvard Law '26"
@@ -172,6 +200,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               </label>
               <input
                 type="email"
+                required
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 placeholder="student@law.edu"
@@ -192,11 +221,16 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               </div>
               <input
                 type="password"
+                required
+                minLength={isSignUp ? 8 : undefined}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••••••"
                 className="w-full bg-[var(--bg-raised)] border border-[var(--hairline)] rounded-xl px-4 py-2.5 text-xs sm:text-sm text-[var(--ink)] placeholder-[var(--muted-2)] focus:outline-none focus:border-[var(--gold)] transition-colors"
               />
+              {isSignUp && (
+                <p className="mt-1.5 text-[10px] text-[var(--muted-2)]">Minimum 8 characters.</p>
+              )}
             </div>
 
             <button

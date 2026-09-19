@@ -13,7 +13,7 @@ export function generateMarkdownBrief(
 ): string {
   const parts: string[] = [];
 
-  parts.push(`# NAYAYA-AI — LEGAL LEARNING & MOOT COURT BRIEF`);
+  parts.push(`# NYAYA-AI — LEGAL LEARNING & MOOT COURT BRIEF`);
   parts.push(`*AI-Powered Legal Learning & Moot Court Assistant*`);
   parts.push(`*Generated on: ${formatDate(Date.now())}*`);
   parts.push(`*Subject:* ${input.subject} | *Jurisdiction:* ${input.jurisdiction}`);
@@ -145,12 +145,19 @@ export function exportAsPdf(
   counterargument?: Counterargument | null,
   explanation?: LegalExplanation | null,
   isMock = false,
-  filename = 'Nayaya_AI_Practice_Brief.pdf'
+  filename = 'Nyaya_AI_Practice_Brief.pdf'
 ): void {
   const doc = new jsPDF({
     unit: 'pt',
     format: 'letter'
   });
+
+  // Brand palette (print-safe darkened variants of the app's near-black + gold theme)
+  const INK: [number, number, number] = [27, 23, 18];
+  const INK_MUTED: [number, number, number] = [90, 84, 74];
+  const GOLD: [number, number, number] = [156, 122, 61];
+  const GOLD_LIGHT_FILL: [number, number, number] = [250, 244, 232];
+  const OPPOSITION: [number, number, number] = [140, 68, 55];
 
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -169,9 +176,9 @@ export function exportAsPdf(
 
   function addFooter() {
     doc.setFontSize(7.5);
-    doc.setTextColor(130, 140, 155);
+    doc.setTextColor(...INK_MUTED);
     doc.text(
-      'Nayaya-AI — Educational Practice Tool | NOT Legal Advice | Page ' + doc.getNumberOfPages(),
+      'Nyaya-AI — Educational Practice Tool | NOT Legal Advice | Page ' + doc.getNumberOfPages(),
       pageWidth / 2,
       pageHeight - 20,
       { align: 'center' }
@@ -179,7 +186,7 @@ export function exportAsPdf(
   }
 
   function addHeaderBanner() {
-    doc.setFillColor(15, 23, 42); // slate-900
+    doc.setFillColor(...GOLD);
     doc.rect(margin, y - 5, contentWidth, 2.5, 'F');
     y += 10;
   }
@@ -187,40 +194,40 @@ export function exportAsPdf(
   // Header
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(17);
-  doc.setTextColor(15, 23, 42);
-  doc.text('NAYAYA-AI — PRACTICE BRIEF', margin, y);
+  doc.setTextColor(...INK);
+  doc.text('NYAYA-AI — PRACTICE BRIEF', margin, y);
   y += 16;
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  doc.setTextColor(71, 85, 105);
+  doc.setTextColor(...INK_MUTED);
   doc.text(`Subject: ${input.subject}    |    Jurisdiction: ${input.jurisdiction}    |    Date: ${formatDate(Date.now())}`, margin, y);
   y += 14;
 
   if (isMock) {
-    doc.setFillColor(239, 246, 255); // blue-50
-    doc.setDrawColor(191, 219, 254);
+    doc.setFillColor(...GOLD_LIGHT_FILL);
+    doc.setDrawColor(...GOLD);
     doc.rect(margin, y, contentWidth, 18, 'FD');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);
-    doc.setTextColor(29, 78, 216);
+    doc.setTextColor(...GOLD);
     doc.text('Demo Mode — Example response. Connect the backend for live AI analysis.', margin + 8, y + 12);
     y += 24;
   }
 
   // Educational Disclaimer Box
-  doc.setFillColor(254, 243, 199); // amber-100
-  doc.setDrawColor(245, 158, 11); // amber-500
+  doc.setFillColor(...GOLD_LIGHT_FILL);
+  doc.setDrawColor(...GOLD);
   doc.rect(margin, y, contentWidth, 34, 'FD');
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
-  doc.setTextColor(180, 83, 9);
+  doc.setTextColor(...GOLD);
   doc.text('PERSISTENT EDUCATIONAL DISCLAIMER', margin + 8, y + 11);
   
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
-  doc.setTextColor(120, 53, 15);
+  doc.setTextColor(...INK_MUTED);
   const disclaimerLines = doc.splitTextToSize(EDUCATIONAL_DISCLAIMER_TEXT, contentWidth - 16);
   doc.text(disclaimerLines, margin + 8, y + 21);
   y += 44;
@@ -228,19 +235,19 @@ export function exportAsPdf(
   // Section 1: Facts & Issue
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  doc.setTextColor(15, 23, 42);
+  doc.setTextColor(...INK);
   doc.text('1. Case Facts & Issue', margin, y);
   y += 12;
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
-  doc.setTextColor(30, 41, 59);
+  doc.setTextColor(...INK);
   doc.text('Legal Issue:', margin, y);
   y += 11;
 
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(8.5);
-  doc.setTextColor(51, 65, 85);
+  doc.setTextColor(...INK_MUTED);
   const issueLines = doc.splitTextToSize(input.issue, contentWidth);
   checkPageBreak(issueLines.length * 10);
   doc.text(issueLines, margin, y);
@@ -248,13 +255,13 @@ export function exportAsPdf(
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
-  doc.setTextColor(30, 41, 59);
+  doc.setTextColor(...INK);
   doc.text('Case Facts:', margin, y);
   y += 11;
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.setTextColor(51, 65, 85);
+  doc.setTextColor(...INK_MUTED);
   const factsLines = doc.splitTextToSize(input.facts, contentWidth);
   checkPageBreak(factsLines.length * 9.5);
   doc.text(factsLines, margin, y);
@@ -265,28 +272,28 @@ export function exportAsPdf(
     checkPageBreak(35);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
-    doc.setTextColor(15, 23, 42);
+    doc.setTextColor(...INK);
     doc.text('2. Structured IRAC Practice Argument', margin, y);
     y += 12;
 
     const iracParts = [
-      { label: '[I] ISSUE', text: argument.issue, color: [2, 132, 199] },
-      { label: '[R] RULE', text: argument.rule, color: [124, 58, 237] },
-      { label: '[A] APPLICATION', text: argument.application, color: [5, 150, 105] },
-      { label: '[C] CONCLUSION', text: argument.conclusion, color: [217, 119, 6] }
+      { label: '[I] ISSUE', text: argument.issue },
+      { label: '[R] RULE', text: argument.rule },
+      { label: '[A] APPLICATION', text: argument.application },
+      { label: '[C] CONCLUSION', text: argument.conclusion }
     ];
 
     iracParts.forEach(part => {
       checkPageBreak(25);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
-      doc.setTextColor(part.color[0], part.color[1], part.color[2]);
+      doc.setTextColor(...GOLD);
       doc.text(part.label, margin, y);
       y += 10;
 
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
-      doc.setTextColor(30, 41, 59);
+      doc.setTextColor(...INK);
       const lines = doc.splitTextToSize(part.text, contentWidth);
       checkPageBreak(lines.length * 9.5);
       doc.text(lines, margin, y);
@@ -297,7 +304,7 @@ export function exportAsPdf(
       checkPageBreak(25);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
-      doc.setTextColor(15, 23, 42);
+      doc.setTextColor(...INK);
       doc.text('General Principles Used:', margin, y);
       y += 10;
       doc.setFont('helvetica', 'normal');
@@ -317,19 +324,19 @@ export function exportAsPdf(
     checkPageBreak(35);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
-    doc.setTextColor(15, 23, 42);
+    doc.setTextColor(...INK);
     doc.text('3. Moot-Court Counterargument', margin, y);
     y += 12;
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
-    doc.setTextColor(185, 28, 28);
+    doc.setTextColor(...OPPOSITION);
     doc.text('Opposition Position:', margin, y);
     y += 10;
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    doc.setTextColor(30, 41, 59);
+    doc.setTextColor(...INK);
     const oppLines = doc.splitTextToSize(counterargument.opposition_position, contentWidth);
     checkPageBreak(oppLines.length * 9.5);
     doc.text(oppLines, margin, y);
@@ -339,7 +346,7 @@ export function exportAsPdf(
       checkPageBreak(20);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
-      doc.setTextColor(30, 41, 59);
+      doc.setTextColor(...INK);
       doc.text('Strongest Opposing Arguments:', margin, y);
       y += 10;
       doc.setFont('helvetica', 'normal');
@@ -359,13 +366,13 @@ export function exportAsPdf(
     checkPageBreak(35);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
-    doc.setTextColor(15, 23, 42);
+    doc.setTextColor(...INK);
     doc.text('4. Plain-Language Explanation', margin, y);
     y += 12;
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    doc.setTextColor(30, 41, 59);
+    doc.setTextColor(...INK);
     const plainLines = doc.splitTextToSize(explanation.plain_explanation, contentWidth);
     checkPageBreak(plainLines.length * 9.5);
     doc.text(plainLines, margin, y);

@@ -1,15 +1,31 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { LandingPage } from './components/landing/LandingPage';
 import { AuthPage } from './components/auth/AuthPage';
 import { WorkspacePage } from './components/workspace/WorkspacePage';
 import { useTheme } from './hooks/useTheme';
+import { authService, DEMO_MODE_KEY } from './services/api';
 
 export type AppView = 'landing' | 'auth' | 'workspace';
+
 
 export function App() {
   const [currentView, setCurrentView] = useState<AppView>('landing');
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const { theme, toggleTheme } = useTheme();
+
+  // Resume a real, still-valid backend session on reload (verified against the
+  // server, not just "a token exists"); also resume a client-only demo session.
+  useEffect(() => {
+    if (localStorage.getItem(DEMO_MODE_KEY)) {
+      setCurrentView('workspace');
+      return;
+    }
+    if (authService.isAuthenticated()) {
+      authService.me().then(user => {
+        if (user) setCurrentView('workspace');
+      });
+    }
+  }, []);
 
   const handleGetStarted = () => {
     setAuthMode('signup');
@@ -26,6 +42,12 @@ export function App() {
   };
 
   const handleBackToLanding = () => {
+    setCurrentView('landing');
+  };
+
+  const handleLogout = () => {
+    authService.logout();
+    localStorage.removeItem(DEMO_MODE_KEY);
     setCurrentView('landing');
   };
 
@@ -50,7 +72,7 @@ export function App() {
 
       {currentView === 'workspace' && (
         <WorkspacePage
-          onBackToLanding={handleBackToLanding}
+          onLogout={handleLogout}
           theme={theme}
           onToggleTheme={toggleTheme}
         />

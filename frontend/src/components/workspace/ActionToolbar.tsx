@@ -42,7 +42,7 @@ export const ActionToolbar: React.FC<ActionToolbarProps> = ({
   const handleDownloadTxt = () => {
     const brief = generateMarkdownBrief(input, argument, counterargument, explanation, isMock);
     const safeTitle = input.subject.replace(/[^a-zA-Z0-9]/g, '_');
-    downloadAsTxt(`Nayaya_AI_Brief_${safeTitle}.txt`, brief);
+    downloadAsTxt(`Nyaya_AI_Brief_${safeTitle}.txt`, brief);
     onShowToast('Brief downloaded as TXT file', 'success');
   };
 
@@ -50,7 +50,7 @@ export const ActionToolbar: React.FC<ActionToolbarProps> = ({
     try {
       setExportingPdf(true);
       const safeTitle = input.subject.replace(/[^a-zA-Z0-9]/g, '_');
-      exportAsPdf(input, argument, counterargument, explanation, isMock, `Nayaya_AI_${safeTitle}.pdf`);
+      exportAsPdf(input, argument, counterargument, explanation, isMock, `Nyaya_AI_${safeTitle}.pdf`);
       onShowToast('Brief exported as formatted PDF', 'success');
     } catch (err) {
       console.error('PDF export error:', err);

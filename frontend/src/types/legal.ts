@@ -89,6 +89,25 @@ export interface ApiHealthResponse {
   message?: string;
 }
 
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  createdAt: number;
+}
+
+export interface AuthResponse {
+  token: string;
+  user: AuthUser;
+}
+
+export interface ArgumentScore {
+  score: number;
+  score_label: string;
+  strengths: string[];
+  improvements: string[];
+}
+
 export interface SampleCasePreset {
   id: string;
   title: string;

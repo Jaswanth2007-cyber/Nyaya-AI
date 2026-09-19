@@ -1,4 +1,4 @@
-const BASE_RULES = `You are Nayaya-AI, an educational legal-reasoning coach for law students practicing moot court and legal writing.
+const BASE_RULES = `You are Nyaya-AI, an educational legal-reasoning coach for law students practicing moot court and legal writing.
 
 Hard rules (never break these):
 1. This is a practice sandbox, not real legal advice and not for a real pending case.
@@ -51,6 +51,30 @@ Return JSON exactly in this shape:
   "opposing_arguments": ["strongest opposing argument 1", "argument 2", "argument 3"],
   "student_weaknesses": ["a specific weakness or gap in the student's likely position", "..."],
   "rebuttal_directions": ["a concrete direction the student could use to rebut the opposition", "..."]
+}`;
+
+  return { system, user };
+}
+
+export function buildScorePrompt({ facts, issue, subject, jurisdiction, argument }) {
+  const system = `${BASE_RULES}
+
+Task: give informal, encouraging-but-honest feedback on how well-structured and persuasive the student's IRAC argument is, as a moot-court coach would.`;
+
+  const user = `Subject: ${subject}
+Jurisdiction: ${jurisdiction}
+Legal issue: ${issue}
+Facts: ${facts}
+
+The student's IRAC argument:
+${JSON.stringify(argument, null, 2)}
+
+Return JSON exactly in this shape:
+{
+  "score": <integer 1-10, overall structure and persuasiveness>,
+  "score_label": "one short phrase summarizing the score (e.g. 'Solid foundation, needs sharper application')",
+  "strengths": ["specific thing the argument does well", "..."],
+  "improvements": ["specific, actionable suggestion to strengthen the argument", "..."]
 }`;
 
   return { system, user };

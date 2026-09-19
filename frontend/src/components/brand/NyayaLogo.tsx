@@ -1,6 +1,6 @@
 import React from 'react';
 
-interface NayayaLogoProps {
+interface NyayaLogoProps {
   size?: 'sm' | 'md' | 'lg' | 'xl';
   showText?: boolean;
   className?: string;
@@ -10,7 +10,7 @@ interface NayayaLogoProps {
   fixed?: boolean;
 }
 
-export const NayayaLogo: React.FC<NayayaLogoProps> = ({
+export const NyayaLogo: React.FC<NyayaLogoProps> = ({
   size = 'md',
   showText = true,
   className = '',
@@ -54,7 +54,7 @@ export const NayayaLogo: React.FC<NayayaLogoProps> = ({
       {showText && (
         <div className="flex flex-col">
           <span className={`font-semibold tracking-tight font-sans ${inkClass} ${textSizes}`}>
-            Nayaya<span className={`font-light ml-0.5 ${goldClass}`}>-AI</span>
+            Nyaya<span className={`font-light ml-0.5 ${goldClass}`}>-AI</span>
           </span>
         </div>
       )}

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 export type Theme = 'dark' | 'light';
 
-const STORAGE_KEY = 'nayaya-theme';
+const STORAGE_KEY = 'nyaya-theme';
 
 function getInitialTheme(): Theme {
   if (typeof window === 'undefined') return 'dark';
